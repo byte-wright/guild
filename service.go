@@ -37,7 +37,10 @@ func (e *ServiceCmd) Env(name, value string) *ServiceCmd {
 		ns.env[k] = v
 	}
 
-	ns.env[name] = value
+	val, found := os.LookupEnv(name)
+	if found {
+		ns.env[name] = val
+	}
 
 	return ns
 }
