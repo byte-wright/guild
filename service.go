@@ -53,7 +53,10 @@ func (e *ServiceCmd) ForwardEnv(name string) *ServiceCmd {
 		ns.env[k] = v
 	}
 
-	ns.env[name] = os.Getenv(name)
+	val, found := os.LookupEnv(name)
+	if found {
+		ns.env[name] = val
+	}
 
 	return ns
 }
