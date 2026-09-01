@@ -22,6 +22,9 @@ type GBuild struct {
 	listeners  []*listener
 	containers []*Container
 	published  map[string]string
+
+	outs   *outputs
+	sysOut *ANSIOut
 }
 
 type Context interface {
@@ -50,6 +53,13 @@ type Stopper interface {
 	Stop()
 }
 
+// wrapper is implemented by matchers that decorate another matcher. It lets a build
+// find the named outputs buried in a chain like Debounce(NewANSIOut(...)), so they
+// do not have to be registered by hand.
+type wrapper interface {
+	wrapped() Matcher
+}
+
 // New build a watcher at given path.
 // Folders can be excluded from beeing watched by adding the path,
 // relative from root withouth / prefix.
@@ -63,7 +73,13 @@ func New(root string, exclude []string) (*GBuild, error) {
 		root:      abs,
 		changes:   make(chan string, 1000),
 		published: map[string]string{},
+		outs:      newOutputs(),
 	}
+
+	// guild's own messages are an output like any other, so a ui can list and filter
+	// them next to the services
+	gb.sysOut = NewANSIOut("guild", 12, 160, 160, 160, nil)
+	gb.outs.register(gb.sysOut)
 
 	// guild writes its own state below stateDir, watching it would feed changes back into
 	// the matchers that caused them.
@@ -85,6 +101,38 @@ func (g *GBuild) On(pattern string, matcher Matcher) {
 		pattern: regexp.MustCompile(pattern),
 		matcher: matcher,
 	})
+
+	g.registerOutputs(matcher)
+}
+
+// registerOutputs walks a matcher chain and adopts every named output in it.
+func (g *GBuild) registerOutputs(m Matcher) {
+	for m != nil {
+		out, ok := m.(*ANSIOut)
+		if ok {
+			g.outs.register(out)
+		}
+
+		w, ok := m.(wrapper)
+		if !ok {
+			return
+		}
+
+		m = w.wrapped()
+	}
+}
+
+// context builds the context for guild's own messages and for matchers that have no
+// output of their own. While a sink is installed those lines are routed through the
+// built in output, because stdout belongs to the ui then.
+func (g *GBuild) context(file string, once bool) Context {
+	sc := &stdoutContext{file: file, once: once}
+
+	if g.outs.hasSink() {
+		return &ansiOutContext{parent: g.sysOut, ctx: sc}
+	}
+
+	return sc
 }
 
 func (g *GBuild) run() {
@@ -93,7 +141,7 @@ func (g *GBuild) run() {
 		for _, l := range g.listeners {
 			sm := l.pattern.FindStringSubmatch(c)
 			if len(sm) > 0 {
-				l.matcher.Match(&stdoutContext{file: c})
+				l.matcher.Match(g.context(c, false))
 			}
 		}
 
@@ -125,7 +173,7 @@ func (g *GBuild) Continuous() {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
 
-	sc := &stdoutContext{}
+	sc := g.context("", false)
 
 	err := g.startContainers(sc)
 	if err != nil {
@@ -147,9 +195,7 @@ func (g *GBuild) Continuous() {
 }
 
 func (g *GBuild) Once() {
-	sc := &stdoutContext{
-		once: true,
-	}
+	sc := g.context("", true)
 
 	for _, listener := range g.listeners {
 		listener.matcher.Match(sc)
@@ -192,6 +238,10 @@ func Debounce(delay time.Duration, m Matcher) Matcher {
 	go deb.run()
 
 	return deb
+}
+
+func (d *debounce) wrapped() Matcher {
+	return d.matcher
 }
 
 func (d *debounce) Stop() {

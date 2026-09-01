@@ -9,9 +9,15 @@ import (
 )
 
 type ANSIOut struct {
+	name    string
 	prefix  string
+	r, g, b int
 	color   *color.Color
 	matcher Matcher
+
+	// outs is set when the output is registered on a build. While it is nil, or
+	// while no sink is installed, lines are printed to stdout.
+	outs *outputs
 }
 
 type ansiOutContext struct {
@@ -20,6 +26,8 @@ type ansiOutContext struct {
 }
 
 func NewANSIOut(prefix string, n int, r, g, b int, matcher Matcher) *ANSIOut {
+	name := prefix
+
 	if len(prefix) > n {
 		prefix = prefix[:n]
 	}
@@ -29,10 +37,30 @@ func NewANSIOut(prefix string, n int, r, g, b int, matcher Matcher) *ANSIOut {
 	}
 
 	return &ANSIOut{
+		name:    name,
 		prefix:  prefix,
+		r:       r,
+		g:       g,
+		b:       b,
 		color:   color.RGB(r, g, b),
 		matcher: matcher,
 	}
+}
+
+// Name is the output name as given, without the padding of the printed prefix.
+func (a *ANSIOut) Name() string {
+	return a.name
+}
+
+// Prefix is the name padded to the requested width, as it appears in front of
+// every line.
+func (a *ANSIOut) Prefix() string {
+	return a.prefix
+}
+
+// RGB is the color the output is printed in.
+func (a *ANSIOut) RGB() (int, int, int) {
+	return a.r, a.g, a.b
 }
 
 // Context returns a Context printing through this prefix and color, for output that
@@ -58,6 +86,22 @@ func (a *ANSIOut) Match(ctx Context) {
 	})
 }
 
+func (a *ANSIOut) wrapped() Matcher {
+	return a.matcher
+}
+
+// print writes the lines to stdout under the prefix, in one colored block so a
+// terminal only has to switch color once per batch.
+func (a *ANSIOut) print(lines []string) {
+	a.color.Set()
+
+	for _, l := range lines {
+		fmt.Println(a.prefix+" |", l)
+	}
+
+	color.Unset()
+}
+
 func (a *ansiOutContext) File() string {
 	return a.ctx.File()
 }
@@ -67,8 +111,6 @@ func (a *ansiOutContext) Once() bool {
 }
 
 func (a *ansiOutContext) Println(out ...any) {
-	a.parent.color.Set()
-
 	sb := bytes.NewBufferString("")
 
 	for i, o := range out {
@@ -81,9 +123,12 @@ func (a *ansiOutContext) Println(out ...any) {
 
 	lines := strings.Split(sb.String(), "\n")
 
-	for _, l := range lines {
-		fmt.Println(a.parent.prefix+" |", l)
+	if a.parent.outs == nil {
+		a.parent.print(lines)
+		return
 	}
 
-	color.Unset()
+	for _, l := range lines {
+		a.parent.outs.line(a.parent, l)
+	}
 }

@@ -9,10 +9,14 @@ import (
 	"github.com/byte-wright/guild"
 )
 
-var once = false
+var (
+	once = false
+	ui   = false
+)
 
 func main() {
 	flag.BoolVar(&once, "once", false, "execute build once and exit")
+	flag.BoolVar(&ui, "ui", false, "run with the terminal ui")
 
 	flag.Parse()
 
@@ -71,6 +75,15 @@ func main() {
 
 	if once {
 		b.Once()
+		return
+	}
+
+	if ui {
+		err := b.ContinuousUI()
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		return
 	}
 

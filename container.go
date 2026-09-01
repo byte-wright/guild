@@ -30,6 +30,7 @@ type Container struct {
 	ports []*portMap
 	out   *ANSIOut
 
+	gb    *GBuild
 	root  string
 	ready chan struct{}
 }
@@ -43,6 +44,7 @@ func (g *GBuild) Container(image string) *Container {
 		image: image,
 		name:  fmt.Sprintf("guild-%v-%v", shortHash(g.root), len(g.containers)),
 		env:   map[string]string{},
+		gb:    g,
 		root:  g.root,
 		ready: make(chan struct{}),
 	}
@@ -61,6 +63,8 @@ func (c *Container) Env(name, value string) *Container {
 // matchers.
 func (c *Container) Out(prefix string, n int, r, g, b int) *Container {
 	c.out = NewANSIOut(prefix, n, r, g, b, nil)
+	c.gb.outs.register(c.out)
+
 	return c
 }
 
@@ -91,7 +95,7 @@ func (c *Container) HostPort(containerPort int) int {
 
 func (c *Container) context() Context {
 	if c.out == nil {
-		return &stdoutContext{}
+		return c.gb.context("", false)
 	}
 
 	return c.out.Context()

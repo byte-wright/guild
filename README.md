@@ -50,6 +50,44 @@ are passed on to child processes.
 
     b.Publish("DATABASE_URL", dbURL)
 
+terminal ui
+===========
+
+`ContinuousUI` runs the build like `Continuous`, but draws a terminal ui instead of
+printing a stream of prefixed lines.
+
+    if ui {
+    	err := b.ContinuousUI()
+    	if err != nil {
+    		log.Fatal(err)
+    	}
+
+    	return
+    }
+
+    b.Continuous()
+
+Every named output gets a button at the bottom, in its own color, that shows or
+hides its lines. Hidden lines are still collected, so showing an output again
+reveals what it said while it was hidden rather than only what comes next. Guild's
+own messages are an output like any other and can be filtered the same way.
+
+The log follows the newest line until you scroll away from it, and follows again
+once you return to the bottom. Scroll with the wheel, by dragging the scroll bar,
+or with PgUp/PgDn/Home/End and the arrow keys. `f` toggles following, Esc or Ctrl-C
+quits.
+
+Outputs do not have to be registered by hand. `On` walks the matcher chain it is
+given and picks up every `NewANSIOut` in it, including the ones wrapped in a
+`Debounce`, and `Container.Out` registers itself.
+
+While the ui runs it owns the terminal, so stdout and stderr are redirected to
+`stdout.log` and `stderr.log` in the working directory. Check those after a crash.
+
+Containers are started in the background in this mode, so the ui is up while they
+come up and a container that fails to start leaves a readable error behind instead
+of ending the run.
+
 example
 =======
 
@@ -64,10 +102,14 @@ package main
     	"github.com/byte-wright/guild"
     )
     
-    var once = false
+    var (
+    	once = false
+    	ui   = false
+    )
     
     func main() {
     	flag.BoolVar(&once, "once", false, "execute build once and exit")
+    	flag.BoolVar(&ui, "ui", false, "run with the terminal ui")
     
     	flag.Parse()
 
@@ -127,6 +169,15 @@ package main
     
     	if once {
     		b.Once()
+    		return
+    	}
+    
+    	if ui { // draw a terminal ui instead of printing lines
+    		err := b.ContinuousUI()
+    		if err != nil {
+    			log.Fatal(err)
+    		}
+    
     		return
     	}
     
