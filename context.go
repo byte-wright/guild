@@ -8,7 +8,7 @@ type stdoutContext struct {
 }
 
 func (s *stdoutContext) File() string {
-	return ""
+	return s.file
 }
 
 func (s *stdoutContext) Println(out ...any) {

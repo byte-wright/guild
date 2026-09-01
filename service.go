@@ -30,7 +30,7 @@ func (e *ServiceCmd) Env(name, value string) *ServiceCmd {
 	ns := &ServiceCmd{
 		cmd:    e.cmd,
 		params: e.params,
-		env:    e.env,
+		env:    map[string]string{},
 	}
 
 	for k, v := range e.env {
@@ -46,7 +46,7 @@ func (e *ServiceCmd) ForwardEnv(name string) *ServiceCmd {
 	ns := &ServiceCmd{
 		cmd:    e.cmd,
 		params: e.params,
-		env:    e.env,
+		env:    map[string]string{},
 	}
 
 	for k, v := range e.env {
@@ -73,7 +73,7 @@ func (e *ServiceCmd) Match(c Context) {
 		}
 
 		for i := 0; i < 100; i++ {
-			time.Sleep(time.Microsecond * 10)
+			time.Sleep(time.Millisecond * 10)
 			if !e.isRunning() {
 				break
 			}
