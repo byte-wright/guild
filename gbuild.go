@@ -247,8 +247,8 @@ func (f *funcCall) Match(c Context) {
 }
 
 // Publish makes a value available to tools running outside of guild by writing it
-// to the env file in stateDir. The file is written once all containers are up and
-// removed again on shutdown.
+// to a shell script in stateDir that can be sourced. The file is written once all
+// containers are up and removed again on shutdown.
 func (g *GBuild) Publish(name, value string) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
@@ -257,7 +257,7 @@ func (g *GBuild) Publish(name, value string) {
 }
 
 func (g *GBuild) envPath() string {
-	return filepath.Join(g.root, stateDir, "env")
+	return filepath.Join(g.root, stateDir, "env.sh")
 }
 
 func (g *GBuild) writeEnv() error {
@@ -277,7 +277,8 @@ func (g *GBuild) writeEnv() error {
 
 	sb := strings.Builder{}
 	for _, n := range names {
-		sb.WriteString(n + "=" + g.published[n] + "\n")
+		// export, because a sourced plain assignment is not passed on to child processes
+		sb.WriteString("export " + n + "=" + shellQuote(g.published[n]) + "\n")
 	}
 
 	err := os.MkdirAll(filepath.Join(g.root, stateDir), 0o755)
@@ -286,6 +287,12 @@ func (g *GBuild) writeEnv() error {
 	}
 
 	return os.WriteFile(g.envPath(), []byte(sb.String()), 0o644)
+}
+
+// shellQuote wraps a value in single quotes so passwords and urls cannot be
+// reinterpreted by the shell that sources the file.
+func shellQuote(v string) string {
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
 }
 
 func (g *GBuild) removeEnv() {

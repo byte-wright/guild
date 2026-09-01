@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -107,21 +108,49 @@ func TestPublishWritesEnvFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := os.ReadFile(filepath.Join(dir, stateDir, "env"))
+	out, err := os.ReadFile(filepath.Join(dir, stateDir, "env.sh"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := "DATABASE_URL=postgres://localhost:123/x\nREDIS_URL=redis://localhost:456\n"
+	want := "export DATABASE_URL='postgres://localhost:123/x'\nexport REDIS_URL='redis://localhost:456'\n"
 	if string(out) != want {
 		t.Errorf("expected %q but was %q", want, string(out))
 	}
 
 	b.Close()
 
-	_, err = os.Stat(filepath.Join(dir, stateDir, "env"))
+	_, err = os.Stat(filepath.Join(dir, stateDir, "env.sh"))
 	if !os.IsNotExist(err) {
 		t.Error("env file should be removed on shutdown, a stale one points at dead containers")
+	}
+}
+
+func TestPublishQuotesValues(t *testing.T) {
+	dir := t.TempDir()
+
+	b, err := New(dir, []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer b.Close()
+
+	b.Publish("PASSWORD", "it's $HOME; rm -rf /")
+
+	err = b.writeEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := exec.Command("sh", "-c",
+		". "+filepath.Join(dir, stateDir, "env.sh")+" && printf %s \"$PASSWORD\"").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(out) != "it's $HOME; rm -rf /" {
+		t.Errorf("value should survive sourcing unchanged but was %q", string(out))
 	}
 }
 

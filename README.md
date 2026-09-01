@@ -31,9 +31,14 @@ wired up, and forwards it to the port docker picked. That means:
 - connections arriving before the container is ready are held open until it is,
   instead of being refused, so services and tools need no connect retry logic
 
-Values passed to `Publish` are written to `.guild/env` in dotenv format once all
-containers are up, and removed again on shutdown. Tools running outside of guild,
-like a seeder, can `source` it. Add `.guild/` to your `.gitignore`.
+Values passed to `Publish` are written to `.guild/env.sh` once all containers are up,
+and removed again on shutdown. Tools running outside of guild, like a seeder, can
+source it. Add `.guild/` to your `.gitignore`.
+
+    source .guild/env.sh && ./seed --profile=minimal
+
+The values are exported and single quoted, so they survive sourcing unchanged and
+are passed on to child processes.
 
     db := b.Container("postgres:17").
     	Port(5432).
@@ -80,7 +85,7 @@ package main
     	dbURL := fmt.Sprintf("postgres://postgres:dev@127.0.0.1:%v/postgres?sslmode=disable",
     		db.HostPort(5432))
 
-    	b.Publish("DATABASE_URL", dbURL) // written to .guild/env for external tools
+    	b.Publish("DATABASE_URL", dbURL) // written to .guild/env.sh for external tools
     
     	b.On("\\.(png|jpeg)$", // regexp to match images
     		guild.NewANSIOut("thumbnailer", 12, 255, 128, 0, // print output under given prefix and color
