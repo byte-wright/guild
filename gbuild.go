@@ -1,19 +1,27 @@
 package guild
 
 import (
+	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"regexp"
+	"sort"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
 type GBuild struct {
+	root       string
 	changes    chan string
 	notifyRoot *notifyRoot
 
-	lock      sync.RWMutex
-	listeners []*listener
+	lock       sync.RWMutex
+	listeners  []*listener
+	containers []*Container
+	published  map[string]string
 }
 
 type Context interface {
@@ -36,15 +44,31 @@ type Matcher interface {
 	Match(ctx Context)
 }
 
+// Stopper is an optional interface for matchers that hold resources beyond a single
+// match, like a running service. Decorating matchers must forward Stop to their child.
+type Stopper interface {
+	Stop()
+}
+
 // New build a watcher at given path.
 // Folders can be excluded from beeing watched by adding the path,
 // relative from root withouth / prefix.
 func New(root string, exclude []string) (*GBuild, error) {
-	gb := &GBuild{
-		changes: make(chan string, 1000),
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
 	}
 
-	var err error
+	gb := &GBuild{
+		root:      abs,
+		changes:   make(chan string, 1000),
+		published: map[string]string{},
+	}
+
+	// guild writes its own state below stateDir, watching it would feed changes back into
+	// the matchers that caused them.
+	exclude = append(append([]string{}, exclude...), stateDir)
+
 	gb.notifyRoot, err = newNotifyRoot(root, gb.changes, exclude)
 	if err != nil {
 		return nil, err
@@ -79,12 +103,41 @@ func (g *GBuild) run() {
 
 func (g *GBuild) Close() {
 	g.notifyRoot.Stop()
-	time.Sleep(time.Millisecond * 10)
+
+	g.lock.RLock()
+	defer g.lock.RUnlock()
+
+	for _, l := range g.listeners {
+		stopper, ok := l.matcher.(Stopper)
+		if ok {
+			stopper.Stop()
+		}
+	}
+
+	for _, c := range g.containers {
+		c.stop()
+	}
+
+	g.removeEnv()
 }
 
 func (g *GBuild) Continuous() {
 	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, os.Interrupt)
+	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
+
+	sc := &stdoutContext{}
+
+	err := g.startContainers(sc)
+	if err != nil {
+		sc.Println("could not start containers:", err)
+		g.Close()
+		return
+	}
+
+	err = g.writeEnv()
+	if err != nil {
+		sc.Println("could not write env file:", err)
+	}
 
 	go g.run()
 
@@ -141,6 +194,13 @@ func Debounce(delay time.Duration, m Matcher) Matcher {
 	return deb
 }
 
+func (d *debounce) Stop() {
+	stopper, ok := d.matcher.(Stopper)
+	if ok {
+		stopper.Stop()
+	}
+}
+
 func (d *debounce) Match(c Context) {
 	if c.Once() {
 		d.matcher.Match(c)
@@ -184,4 +244,53 @@ func Func(f func(c Context)) Matcher {
 
 func (f *funcCall) Match(c Context) {
 	f.f(c)
+}
+
+// Publish makes a value available to tools running outside of guild by writing it
+// to the env file in stateDir. The file is written once all containers are up and
+// removed again on shutdown.
+func (g *GBuild) Publish(name, value string) {
+	g.lock.Lock()
+	defer g.lock.Unlock()
+
+	g.published[name] = value
+}
+
+func (g *GBuild) envPath() string {
+	return filepath.Join(g.root, stateDir, "env")
+}
+
+func (g *GBuild) writeEnv() error {
+	g.lock.RLock()
+	defer g.lock.RUnlock()
+
+	if len(g.published) == 0 {
+		return nil
+	}
+
+	names := make([]string, 0, len(g.published))
+	for k := range g.published {
+		names = append(names, k)
+	}
+
+	sort.Strings(names)
+
+	sb := strings.Builder{}
+	for _, n := range names {
+		sb.WriteString(n + "=" + g.published[n] + "\n")
+	}
+
+	err := os.MkdirAll(filepath.Join(g.root, stateDir), 0o755)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(g.envPath(), []byte(sb.String()), 0o644)
+}
+
+func (g *GBuild) removeEnv() {
+	err := os.Remove(g.envPath())
+	if err != nil && !os.IsNotExist(err) {
+		log.Println("could not remove env file:", err)
+	}
 }

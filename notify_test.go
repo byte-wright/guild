@@ -29,7 +29,11 @@ func (nrt *notifyRootTest) fetch() []string {
 }
 
 func (nrt *notifyRootTest) wait() {
-	time.Sleep(time.Millisecond * 5)
+	waitEvents()
+}
+
+func waitEvents() {
+	time.Sleep(time.Millisecond * 20)
 }
 
 func runNotifyRootTest(name string, t *testing.T, f func(*notifyRootTest)) {

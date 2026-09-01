@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"gitlab.com/akabio/rnotify"
@@ -11,7 +12,8 @@ import (
 
 // notifyRoot will listen for file changes for given root
 type notifyRoot struct {
-	stopSignal chan int
+	stopSignal chan struct{}
+	stopOnce   sync.Once
 	target     chan string
 	watcher    *rnotify.Watcher
 }
@@ -47,7 +49,7 @@ func newNotifyRoot(root string, target chan string, exclude []string) (*notifyRo
 	}
 
 	nr := &notifyRoot{
-		stopSignal: make(chan int),
+		stopSignal: make(chan struct{}),
 		target:     target,
 	}
 
@@ -62,9 +64,12 @@ func newNotifyRoot(root string, target chan string, exclude []string) (*notifyRo
 }
 
 // Stop will release watch and stop processing of events, channel might not get emptied before.
+// It is safe to call multiple times and never blocks, even if the target channel is full.
 func (nr *notifyRoot) Stop() {
-	nr.watcher.Close()
-	nr.stopSignal <- 1
+	nr.stopOnce.Do(func() {
+		nr.watcher.Close()
+		close(nr.stopSignal)
+	})
 }
 
 // process will read notify events and forward them to the target channels
@@ -90,7 +95,12 @@ func (nr *notifyRoot) process() {
 		case <-delayed:
 			// now we flush all notifications to the target channel
 			for k := range changes {
-				nr.target <- k
+				// a full target channel must not keep us from stopping
+				select {
+				case nr.target <- k:
+				case <-nr.stopSignal:
+					return
+				}
 			}
 			// instead of deleting all by iterating, create a new empty map
 			changes = map[string]bool{}

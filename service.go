@@ -61,36 +61,48 @@ func (e *ServiceCmd) ForwardEnv(name string) *ServiceCmd {
 	return ns
 }
 
+// Stop terminates a running service. It is called on shutdown so services do not
+// outlive guild.
+func (e *ServiceCmd) Stop() {
+	e.stop(&stdoutContext{})
+}
+
+func (e *ServiceCmd) stop(c Context) {
+	if !e.isRunning() {
+		return
+	}
+
+	err := e.currentCmd.Process.Signal(syscall.SIGINT)
+	if err != nil {
+		c.Println(err)
+	}
+
+	for i := 0; i < 100; i++ {
+		time.Sleep(time.Millisecond * 10)
+		if !e.isRunning() {
+			break
+		}
+	}
+
+	if e.isRunning() {
+		err := e.currentCmd.Process.Kill()
+		if err != nil {
+			c.Println(err)
+		}
+	}
+
+	err = e.currentCmd.Wait()
+	if err != nil {
+		c.Println(err)
+	}
+}
+
 func (e *ServiceCmd) Match(c Context) {
 	if c.Once() {
 		return
 	}
 
-	if e.isRunning() {
-		err := e.currentCmd.Process.Signal(syscall.SIGINT)
-		if err != nil {
-			c.Println(err)
-		}
-
-		for i := 0; i < 100; i++ {
-			time.Sleep(time.Millisecond * 10)
-			if !e.isRunning() {
-				break
-			}
-		}
-
-		if e.isRunning() {
-			err := e.currentCmd.Process.Kill()
-			if err != nil {
-				c.Println(err)
-			}
-		}
-
-		err = e.currentCmd.Wait()
-		if err != nil {
-			c.Println(err)
-		}
-	}
+	e.stop(c)
 
 	c.Println("start service")
 

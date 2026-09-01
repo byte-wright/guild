@@ -19,7 +19,7 @@ type ansiOutContext struct {
 	ctx    Context
 }
 
-func NewANSIOut(prefix string, n int, r, g, b int, matcher Matcher) Matcher {
+func NewANSIOut(prefix string, n int, r, g, b int, matcher Matcher) *ANSIOut {
 	if len(prefix) > n {
 		prefix = prefix[:n]
 	}
@@ -32,6 +32,22 @@ func NewANSIOut(prefix string, n int, r, g, b int, matcher Matcher) Matcher {
 		prefix:  prefix,
 		color:   color.RGB(r, g, b),
 		matcher: matcher,
+	}
+}
+
+// Context returns a Context printing through this prefix and color, for output that
+// does not originate from a match, like container logs.
+func (a *ANSIOut) Context() Context {
+	return &ansiOutContext{
+		parent: a,
+		ctx:    &stdoutContext{},
+	}
+}
+
+func (a *ANSIOut) Stop() {
+	stopper, ok := a.matcher.(Stopper)
+	if ok {
+		stopper.Stop()
 	}
 }
 
@@ -69,5 +85,5 @@ func (a *ansiOutContext) Println(out ...any) {
 		fmt.Println(a.parent.prefix+" |", l)
 	}
 
-	defer color.Unset()
+	color.Unset()
 }
