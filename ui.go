@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -40,10 +41,10 @@ type ui struct {
 // hides its output, and the log can be scrolled back with the wheel, the scroll bar
 // or the keyboard.
 //
-// Stdout and stderr are redirected to stdout.log and stderr.log while it runs,
-// because the ui owns the terminal.
+// Stdout and stderr are redirected to stdout.log and stderr.log in stateDir while
+// it runs, because the ui owns the terminal.
 func (g *GBuild) ContinuousUI() error {
-	restore, err := util.RedirectStdToFiles()
+	restore, err := util.RedirectStdToFilesIn(filepath.Join(g.root, stateDir))
 	if err != nil {
 		return err
 	}

@@ -82,7 +82,9 @@ given and picks up every `NewANSIOut` in it, including the ones wrapped in a
 `Debounce`, and `Container.Out` registers itself.
 
 While the ui runs it owns the terminal, so stdout and stderr are redirected to
-`stdout.log` and `stderr.log` in the working directory. Check those after a crash.
+`.guild/stdout.log` and `.guild/stderr.log`. Anything a matcher prints goes through
+a Context and lands in the ui, so those two only collect what escapes it, like a
+stray `fmt.Println` or a panic trace. Check them after a crash.
 
 Containers are started in the background in this mode, so the ui is up while they
 come up and a container that fails to start leaves a readable error behind instead
