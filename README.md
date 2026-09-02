@@ -67,10 +67,14 @@ printing a stream of prefixed lines.
 
     b.Continuous()
 
-Every named output gets a button at the bottom, in its own color, that shows or
-hides its lines. Hidden lines are still collected, so showing an output again
-reveals what it said while it was hidden rather than only what comes next. Guild's
-own messages are an output like any other and can be filtered the same way.
+Every named output gets a button in the column on the right, in its own color, that
+shows or hides its lines. Hidden lines are still collected, so showing an output
+again reveals what it said while it was hidden rather than only what comes next.
+Guild's own messages are an output like any other and can be filtered the same way.
+
+Holding ctrl over a button shows that output alone for as long as ctrl is held,
+which is a way to look at one service without losing the selection you had. A
+ctrl+click makes it stick: the clicked output stays the only shown one.
 
 The log follows the newest line until you scroll away from it, and follows again
 once you return to the bottom. Scroll with the wheel, by dragging the scroll bar,
