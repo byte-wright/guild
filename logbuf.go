@@ -22,23 +22,28 @@ func newLogBuffer(max int) *logBuffer {
 	return &logBuffer{max: max}
 }
 
-// Line implements Sink. It is called from the goroutines of the running matchers.
-func (b *logBuffer) Line(out *ANSIOut, text string) {
+// Lines implements Sink. It is called from the goroutines of the running matchers
+// and appends all lines of a message under one lock, so a multi line message is
+// never split up by another output. Lines are sanitized on the way in, once per
+// line instead of once per line and frame.
+func (b *logBuffer) Lines(out *ANSIOut, texts []string) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	if len(b.lines) >= b.max {
-		// dropping a chunk instead of a single line keeps this from copying the
-		// whole buffer on every line once it is full
-		drop := b.max / 10
-		if drop < 1 {
-			drop = 1
+	for _, t := range texts {
+		if len(b.lines) >= b.max {
+			// dropping a chunk instead of a single line keeps this from copying the
+			// whole buffer on every line once it is full
+			drop := b.max / 10
+			if drop < 1 {
+				drop = 1
+			}
+
+			b.lines = append(b.lines[:0], b.lines[drop:]...)
 		}
 
-		b.lines = append(b.lines[:0], b.lines[drop:]...)
+		b.lines = append(b.lines, logLine{out: out, text: sanitize(t)})
 	}
-
-	b.lines = append(b.lines, logLine{out: out, text: text})
 }
 
 // filter collects the lines of the shown outputs into dst. dst is reused across

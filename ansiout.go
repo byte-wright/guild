@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 )
+
+// printLock serializes the stdout path. Outputs are printed from the goroutines of
+// the running matchers, so without it the lines of two of them end up mixed into
+// each other, along with the color escapes around them.
+var printLock sync.Mutex
 
 type ANSIOut struct {
 	name    string
@@ -93,6 +99,9 @@ func (a *ANSIOut) wrapped() Matcher {
 // print writes the lines to stdout under the prefix, in one colored block so a
 // terminal only has to switch color once per batch.
 func (a *ANSIOut) print(lines []string) {
+	printLock.Lock()
+	defer printLock.Unlock()
+
 	a.color.Set()
 
 	for _, l := range lines {
@@ -128,7 +137,5 @@ func (a *ansiOutContext) Println(out ...any) {
 		return
 	}
 
-	for _, l := range lines {
-		a.parent.outs.line(a.parent, l)
-	}
+	a.parent.outs.lines(a.parent, lines)
 }

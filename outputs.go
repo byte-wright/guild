@@ -4,9 +4,11 @@ import "sync"
 
 // Sink receives the lines of every registered output instead of stdout. It is
 // installed by the ui and called from the goroutines of the running matchers, so
-// implementations must be safe for concurrent use.
+// implementations must be safe for concurrent use. Lines is called with all lines
+// of one message and has to keep them together, otherwise concurrent outputs
+// interleave in the middle of a multi line message.
 type Sink interface {
-	Line(out *ANSIOut, text string)
+	Lines(out *ANSIOut, texts []string)
 }
 
 // outputs is the registry of the named outputs of a build. It lets a ui list the
@@ -59,15 +61,15 @@ func (o *outputs) hasSink() bool {
 	return o.sink != nil
 }
 
-func (o *outputs) line(a *ANSIOut, text string) {
+func (o *outputs) lines(a *ANSIOut, texts []string) {
 	o.lock.Lock()
 	sink := o.sink
 	o.lock.Unlock()
 
 	if sink == nil {
-		a.print([]string{text})
+		a.print(texts)
 		return
 	}
 
-	sink.Line(a, text)
+	sink.Lines(a, texts)
 }
