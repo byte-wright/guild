@@ -3,7 +3,7 @@ module github.com/byte-wright/guild
 go 1.25.0
 
 require (
-	github.com/byte-wright/timui v0.0.4
+	github.com/byte-wright/timui v0.0.5
 	github.com/fatih/color v1.19.0
 	gitlab.com/akabio/rnotify v0.4.2
 	gitlab.com/bytewright/gmath v0.23.1
