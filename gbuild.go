@@ -328,7 +328,11 @@ func (g *GBuild) writeEnv() error {
 	sb := strings.Builder{}
 	for _, n := range names {
 		// export, because a sourced plain assignment is not passed on to child processes
-		sb.WriteString("export " + n + "=" + shellQuote(g.published[n]) + "\n")
+		sb.WriteString("export ")
+		sb.WriteString(n)
+		sb.WriteString("=")
+		sb.WriteString(shellQuote(g.published[n]))
+		sb.WriteString("\n")
 	}
 
 	err := os.MkdirAll(filepath.Join(g.root, stateDir), 0o755)

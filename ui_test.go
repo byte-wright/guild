@@ -16,6 +16,8 @@ type uiBackend struct {
 	mouse   mathi.Vec2
 	pressed bool
 	input   timui.Input
+
+	clipboard string
 }
 
 func newUIBackend(w, h int) *uiBackend {
@@ -38,6 +40,7 @@ func (b *uiBackend) Size() mathi.Vec2                { return b.size }
 func (b *uiBackend) MousePosition() mathi.Vec2       { return b.mouse }
 func (b *uiBackend) MousePressed(key timui.Key) bool { return b.pressed }
 func (b *uiBackend) Render()                         {}
+func (b *uiBackend) WriteClipboard(text string)      { b.clipboard = text }
 
 func (b *uiBackend) TakeInput() timui.Input {
 	input := b.input
