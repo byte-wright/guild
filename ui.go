@@ -50,10 +50,15 @@ type ui struct {
 // that shows or hides its output, and the log can be scrolled back with the wheel,
 // the scroll bar or the keyboard.
 //
-// Stdout and stderr are redirected to stdout.log and stderr.log in stateDir while
-// it runs, because the ui owns the terminal.
+// Stdout and stderr are redirected while it runs, because the ui owns the terminal.
+// They go into the log under their own outputs and into stdout.log and stderr.log in
+// stateDir, so they can be read during the run and after it.
 func (g *GBuild) ContinuousUI() error {
-	restore, err := util.RedirectStdToFilesIn(filepath.Join(g.root, stateDir))
+	log := newLogBuffer(uiLogLines)
+	capture := g.newStdCapture(log)
+
+	restore, err := util.RedirectStdToFilesIn(filepath.Join(g.root, stateDir),
+		util.TapStdout(capture.stdout), util.TapStderr(capture.stderr))
 	if err != nil {
 		return err
 	}
@@ -67,7 +72,7 @@ func (g *GBuild) ContinuousUI() error {
 	u := &ui{
 		gb:         g,
 		tui:        timui.New(backend),
-		log:        newLogBuffer(uiLogLines),
+		log:        log,
 		shown:      map[*ANSIOut]bool{},
 		previewSet: map[*ANSIOut]bool{},
 		scroll:     timui.ScrollState{Follow: true},
