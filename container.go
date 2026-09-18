@@ -68,11 +68,22 @@ func (c *Container) Out(prefix string, n int, r, g, b int) *Container {
 	return c
 }
 
-// Port exposes a container port. Guild binds a loopback port immediately, so
-// HostPort is known while wiring up, before the container exists. Connections to it
-// are held until the container accepts them.
+// Port exposes a container port on a free loopback port. Guild binds it
+// immediately, so HostPort is known while wiring up, before the container exists.
+// Connections to it are held until the container accepts them.
 func (c *Container) Port(containerPort int) *Container {
-	pm, err := newPortMap(containerPort, c.ready)
+	return c.port(containerPort, 0)
+}
+
+// PortMap is Port with a fixed host port, for the cases where something outside the
+// build has the port hardcoded. It panics if the port is already taken, and unlike
+// Port it makes two guild instances on the same machine collide.
+func (c *Container) PortMap(containerPort, hostPort int) *Container {
+	return c.port(containerPort, hostPort)
+}
+
+func (c *Container) port(containerPort, hostPort int) *Container {
+	pm, err := newPortMap(containerPort, hostPort, c.ready)
 	if err != nil {
 		panic(fmt.Sprintf("cannot listen for container port %v: %v", containerPort, err))
 	}

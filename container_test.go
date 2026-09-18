@@ -180,3 +180,61 @@ func TestStateDirIsNotWatched(t *testing.T) {
 		}
 	}
 }
+
+func TestContainerPortMapUsesFixedHostPort(t *testing.T) {
+	target, closeTarget := echoServer(t)
+	defer closeTarget()
+
+	stubDocker(t, target)
+
+	// free ports it again, so binding it below is what the caller of PortMap does
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fixed := l.Addr().(*net.TCPAddr).Port
+
+	err = l.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	b, err := New(t.TempDir(), []string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer b.Close()
+
+	db := b.Container("postgres:17").PortMap(5432, fixed)
+
+	if db.HostPort(5432) != fixed {
+		t.Fatalf("expected host port %v but was %v", fixed, db.HostPort(5432))
+	}
+
+	err = b.startContainers(&stdoutContext{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := net.Dial("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(fixed)))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer conn.Close()
+
+	if _, err := fmt.Fprint(conn, "ping"); err != nil {
+		t.Fatal(err)
+	}
+
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil {
+		t.Fatal(err)
+	}
+
+	if string(buf) != "ping" {
+		t.Errorf("expected ping but was %q", string(buf))
+	}
+}

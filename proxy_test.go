@@ -48,7 +48,7 @@ func TestProxyForwards(t *testing.T) {
 
 	ready := make(chan struct{})
 
-	p, err := newPortMap(5432, ready)
+	p, err := newPortMap(5432, 0, ready)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestProxyParksUntilReady(t *testing.T) {
 
 	ready := make(chan struct{})
 
-	p, err := newPortMap(5432, ready)
+	p, err := newPortMap(5432, 0, ready)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestProxyCloseDropsConnections(t *testing.T) {
 	ready := make(chan struct{})
 	close(ready)
 
-	p, err := newPortMap(5432, ready)
+	p, err := newPortMap(5432, 0, ready)
 	if err != nil {
 		t.Fatal(err)
 	}

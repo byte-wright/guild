@@ -46,8 +46,10 @@ func (p *portMap) target() int {
 	return p.targetPort
 }
 
-func newPortMap(containerPort int, ready <-chan struct{}) (*portMap, error) {
-	l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1)})
+// newPortMap binds the loopback port clients connect to. A hostPort of 0 lets the
+// kernel pick a free one, so concurrent guild instances never collide.
+func newPortMap(containerPort, hostPort int, ready <-chan struct{}) (*portMap, error) {
+	l, err := net.ListenTCP("tcp", &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: hostPort})
 	if err != nil {
 		return nil, err
 	}
