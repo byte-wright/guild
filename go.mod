@@ -5,7 +5,7 @@ go 1.26.0
 require (
 	github.com/byte-wright/timui v0.0.7
 	github.com/fatih/color v1.19.0
-	gitlab.com/akabio/rnotify v0.5.0
+	gitlab.com/akabio/rnotify v0.5.1
 	gitlab.com/bytewright/gmath v0.24.0
 )
 

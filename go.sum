@@ -26,8 +26,8 @@ github.com/rockorager/go-uucode v1.2.2 h1:bqVVrZtdwb8v4OB5BIw/aSAKXvGMbOjQwDTHsR
 github.com/rockorager/go-uucode v1.2.2/go.mod h1:0BZXIGRvWIHt1ruBeViNGcuKyQ3+BRHQbgyXkqRCz38=
 github.com/sergi/go-diff v1.4.0 h1:n/SP9D5ad1fORl+llWyN+D6qoUETXNZARKjyY2/KVCw=
 github.com/sergi/go-diff v1.4.0/go.mod h1:A0bzQcvG0E7Rwjx0REVgAGH58e96+X0MeOfepqsbeW4=
-gitlab.com/akabio/rnotify v0.5.0 h1:Sf+n1ynqxYP8+mAT96aYzQ8fL7xwAOxDK1hBiq3G18g=
-gitlab.com/akabio/rnotify v0.5.0/go.mod h1:poKBlhnExRIPfopUY1lBP9Dgy6Rb2qnEoqNMfLmfsSQ=
+gitlab.com/akabio/rnotify v0.5.1 h1:BAmQ60ECkDhE71pmrpT54dr2PdMSeKolmG19mx92mpw=
+gitlab.com/akabio/rnotify v0.5.1/go.mod h1:poKBlhnExRIPfopUY1lBP9Dgy6Rb2qnEoqNMfLmfsSQ=
 gitlab.com/bytewright/gmath v0.24.0 h1:TDkwr1Od4wUaVlaxxqT5qguKk3DYLoz5qmco5dT0kD0=
 gitlab.com/bytewright/gmath v0.24.0/go.mod h1:sLs19xz9IKmlOkTCRVzF2iHAuWWjonFs8b/cYDPxl04=
 go.rockorager.dev/vaxis v0.17.1 h1:GE71riV9xp2rFDNqUDHU8JyoSOYHaC5G6zKte17oWbA=
