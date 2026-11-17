@@ -108,7 +108,7 @@ func (g *GBuild) ContinuousUI() error {
 // startup brings the containers up and publishes the env file. Failures are
 // reported into the log rather than ending the run, so they stay readable.
 func (g *GBuild) startup() {
-	ctx := g.context("", false)
+	ctx := g.context(false)
 
 	err := g.startContainers(ctx)
 	if err != nil {

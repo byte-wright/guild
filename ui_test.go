@@ -306,7 +306,7 @@ func TestUIFollowsTailAndScrollsBack(t *testing.T) {
 func TestUISystemMessagesAreCaptured(t *testing.T) {
 	u, be, gb := newTestUI(t, 60, 10)
 
-	gb.context("", false).Println("could not start containers: boom")
+	gb.context(false).Println("could not start containers: boom")
 
 	u.render()
 

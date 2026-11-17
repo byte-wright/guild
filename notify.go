@@ -4,32 +4,36 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"gitlab.com/akabio/rnotify"
 )
 
+// batchDelay is how long changes are collected before they are forwarded. Tools often
+// save a file in several steps, collecting them reports it once.
+const batchDelay = time.Millisecond
+
 // notifyRoot will listen for file changes for given root
 type notifyRoot struct {
 	stopSignal chan struct{}
 	stopOnce   sync.Once
 	target     chan string
+	onError    func(error)
 	watcher    *rnotify.Watcher
+
+	// known are the files reported so far. rnotify reports a folder that was moved out
+	// of the tree as that single path, known is what it gets expanded into.
+	known map[string]bool
 }
 
-// newNotifyRoot will create a notifier rooted in the given root
-// path. It will start listening and send file changes to the provided
-// channel.
-// The sent events are strings containing the path of the changed file.
-// they are relative to root path.
-// The events will be collected for a millisecond and duplicates will be removed.
-// Events are often in batches for the same file because tools tend to do multiple
-// different write operations when saving. This should get rid of most duplicates
-// but if there are duplicates it's not really bad.
-// Linked files/folders might not be returned correctly... needs to be tested.
+// newNotifyRoot will create a notifier rooted in the given root path. It sends the
+// paths of changed and removed files to target, relative to root and deduplicated
+// within batchDelay. Errors that do not stop watching, like an unreadable folder or a
+// kernel queue overflow, are passed to onError.
 // The root path must exist and be a folder.
-func newNotifyRoot(root string, target chan string, exclude []string) (*notifyRoot, error) {
+func newNotifyRoot(root string, target chan string, exclude []string, onError func(error)) (*notifyRoot, error) {
 	if target == nil {
 		panic("target must not be nil")
 	}
@@ -51,6 +55,8 @@ func newNotifyRoot(root string, target chan string, exclude []string) (*notifyRo
 	nr := &notifyRoot{
 		stopSignal: make(chan struct{}),
 		target:     target,
+		onError:    onError,
+		known:      map[string]bool{},
 	}
 
 	nr.watcher, err = rnotify.New(root, exclude)
@@ -72,38 +78,77 @@ func (nr *notifyRoot) Stop() {
 	})
 }
 
-// process will read notify events and forward them to the target channels
-// will be run from a goroutine created by NewNotifyRoot
-// it will create batches of 1 millisecond where duplicates are removed
 func (nr *notifyRoot) process() {
-	changes := map[string]bool{}
-	delayed := make(chan int)
+	batch := map[string]bool{}
+	errs := nr.watcher.Errors
+
+	var flush <-chan time.Time
 
 	for {
 		select {
-		case event := <-nr.watcher.Events:
-			if len(changes) == 0 {
-				// if we add the first event initiate a flush event
-				go func() {
-					time.Sleep(time.Millisecond)
-					delayed <- 0
-				}()
+		case event, ok := <-nr.watcher.Events:
+			if !ok {
+				return
 			}
-			changes[event.Path] = true
-		case <-nr.stopSignal:
-			return
-		case <-delayed:
-			// now we flush all notifications to the target channel
-			for k := range changes {
+
+			for _, f := range nr.files(event) {
+				batch[f] = true
+			}
+
+			if flush == nil && len(batch) > 0 {
+				flush = time.After(batchDelay)
+			}
+
+		case err, ok := <-errs:
+			if !ok {
+				errs = nil
+				continue
+			}
+
+			nr.onError(err)
+
+		case <-flush:
+			flush = nil
+
+			for f := range batch {
 				// a full target channel must not keep us from stopping
 				select {
-				case nr.target <- k:
+				case nr.target <- f:
 				case <-nr.stopSignal:
 					return
 				}
 			}
-			// instead of deleting all by iterating, create a new empty map
-			changes = map[string]bool{}
+
+			batch = map[string]bool{}
+
+		case <-nr.stopSignal:
+			return
 		}
 	}
+}
+
+// files are the files an event is about. A removed path that is not a known file is a
+// folder and stands for the known files below it.
+func (nr *notifyRoot) files(e rnotify.Event) []string {
+	if e.Op != rnotify.Removed {
+		nr.known[e.Path] = true
+		return []string{e.Path}
+	}
+
+	if nr.known[e.Path] {
+		delete(nr.known, e.Path)
+		return []string{e.Path}
+	}
+
+	prefix := e.Path + "/"
+	files := []string{}
+
+	for f := range nr.known {
+		if strings.HasPrefix(f, prefix) {
+			delete(nr.known, f)
+			files = append(files, f)
+		}
+	}
+
+	return files
 }

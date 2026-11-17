@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // stubDocker puts a fake docker on PATH that reports the given port as published and
@@ -171,12 +172,16 @@ func TestStateDirIsNotWatched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitEvents()
+	quiet := time.After(100 * time.Millisecond)
 
-	for len(b.changes) > 0 {
-		c := <-b.changes
-		if strings.HasPrefix(c, stateDir) {
-			t.Errorf("writing %v must not trigger a change event", c)
+	for {
+		select {
+		case c := <-b.changes:
+			if strings.HasPrefix(c, stateDir) {
+				t.Errorf("writing %v must not trigger a change event", c)
+			}
+		case <-quiet:
+			return
 		}
 	}
 }

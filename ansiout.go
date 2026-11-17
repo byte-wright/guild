@@ -111,6 +111,10 @@ func (a *ANSIOut) print(lines []string) {
 	color.Unset()
 }
 
+func (a *ansiOutContext) Files() []string {
+	return a.ctx.Files()
+}
+
 func (a *ansiOutContext) File() string {
 	return a.ctx.File()
 }

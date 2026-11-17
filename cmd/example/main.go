@@ -74,7 +74,11 @@ func main() {
 			)))
 
 	if once {
-		b.Once()
+		err := b.Once()
+		if err != nil {
+			log.Fatal(err)
+		}
+
 		return
 	}
 

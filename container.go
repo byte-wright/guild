@@ -106,7 +106,7 @@ func (c *Container) HostPort(containerPort int) int {
 
 func (c *Container) context() Context {
 	if c.out == nil {
-		return c.gb.context("", false)
+		return c.gb.context(false)
 	}
 
 	return c.out.Context()

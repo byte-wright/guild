@@ -11,10 +11,13 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"gitlab.com/akabio/rnotify"
 )
 
 type GBuild struct {
 	root       string
+	exclude    []string
 	changes    chan string
 	notifyRoot *notifyRoot
 
@@ -28,8 +31,14 @@ type GBuild struct {
 }
 
 type Context interface {
-	// File can be the file that triggered the match action but its only intended for debugging.
-	// It might have been discarded during debounce or when running in one shot mode.
+	// Files are the paths that caused this call, relative to the root, slash separated,
+	// sorted and never empty when guild calls Match. Removed files are reported as
+	// well, and a file can be gone by the time the matcher runs, so a path is not
+	// guaranteed to exist.
+	Files() []string
+
+	// File is one of Files, the most recently changed one where that is known. Use
+	// Files wherever every file matters.
 	File() string
 
 	// Print sends a line of text to the output
@@ -70,8 +79,13 @@ func New(root string, exclude []string) (*GBuild, error) {
 	}
 
 	gb := &GBuild{
-		root:      abs,
-		changes:   make(chan string, 1000),
+		root: abs,
+		// guild writes its own state below stateDir, watching it would feed changes
+		// back into the matchers that caused them.
+		exclude: append(append([]string{}, exclude...), stateDir),
+		// unbuffered, so changes arriving while a matcher runs wait in the watcher,
+		// which merges repeated changes of the same file
+		changes:   make(chan string),
 		published: map[string]string{},
 		outs:      newOutputs(),
 	}
@@ -81,16 +95,16 @@ func New(root string, exclude []string) (*GBuild, error) {
 	gb.sysOut = NewANSIOut("guild", 12, 160, 160, 160, nil)
 	gb.outs.register(gb.sysOut)
 
-	// guild writes its own state below stateDir, watching it would feed changes back into
-	// the matchers that caused them.
-	exclude = append(append([]string{}, exclude...), stateDir)
-
-	gb.notifyRoot, err = newNotifyRoot(root, gb.changes, exclude)
+	gb.notifyRoot, err = newNotifyRoot(root, gb.changes, gb.exclude, gb.watchError)
 	if err != nil {
 		return nil, err
 	}
 
 	return gb, nil
+}
+
+func (g *GBuild) watchError(err error) {
+	g.context(false).Println("file watcher:", err)
 }
 
 func (g *GBuild) On(pattern string, matcher Matcher) {
@@ -125,8 +139,8 @@ func (g *GBuild) registerOutputs(m Matcher) {
 // context builds the context for guild's own messages and for matchers that have no
 // output of their own. While a sink is installed those lines are routed through the
 // built in output, because stdout belongs to the ui then.
-func (g *GBuild) context(file string, once bool) Context {
-	sc := &stdoutContext{file: file, once: once}
+func (g *GBuild) context(once bool, files ...string) Context {
+	sc := &stdoutContext{files: files, once: once}
 
 	if g.outs.hasSink() {
 		return &ansiOutContext{parent: g.sysOut, ctx: sc}
@@ -139,9 +153,8 @@ func (g *GBuild) run() {
 	for c := range g.changes {
 		g.lock.RLock()
 		for _, l := range g.listeners {
-			sm := l.pattern.FindStringSubmatch(c)
-			if len(sm) > 0 {
-				l.matcher.Match(g.context(c, false))
+			if l.pattern.MatchString(c) {
+				l.matcher.Match(g.context(false, c))
 			}
 		}
 
@@ -173,7 +186,7 @@ func (g *GBuild) Continuous() {
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, os.Interrupt, syscall.SIGTERM)
 
-	sc := g.context("", false)
+	sc := g.context(false)
 
 	err := g.startContainers(sc)
 	if err != nil {
@@ -194,12 +207,49 @@ func (g *GBuild) Continuous() {
 	g.Close()
 }
 
-func (g *GBuild) Once() {
-	sc := g.context("", true)
+// Once calls every listener a single time with all existing files matching its
+// pattern, and skips listeners whose pattern matches nothing. The tree is walked again
+// before each listener, so files written by an earlier listener are seen by the ones
+// declared after it. Containers are not started.
+func (g *GBuild) Once() error {
+	g.lock.RLock()
+	listeners := append([]*listener{}, g.listeners...)
+	g.lock.RUnlock()
 
-	for _, listener := range g.listeners {
-		listener.matcher.Match(sc)
+	for _, l := range listeners {
+		files, err := g.matchingFiles(l.pattern)
+		if err != nil {
+			return err
+		}
+
+		if len(files) == 0 {
+			continue
+		}
+
+		l.matcher.Match(g.context(true, files...))
 	}
+
+	return nil
+}
+
+func (g *GBuild) matchingFiles(pattern *regexp.Regexp) ([]string, error) {
+	files := []string{}
+
+	err := rnotify.Walk(g.root, g.exclude, func(path string) error {
+		if pattern.MatchString(path) {
+			files = append(files, path)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Walk visits folders before their siblings, "a/b" before "a.txt"
+	sort.Strings(files)
+
+	return files, nil
 }
 
 type printFile struct {
@@ -213,13 +263,16 @@ func PrintFile(prefix string) Matcher {
 }
 
 func (p *printFile) Match(ctx Context) {
-	ctx.Println(p.prefix, ctx.File())
+	for _, f := range ctx.Files() {
+		ctx.Println(p.prefix, f)
+	}
 }
 
 type debounce struct {
 	delay     time.Duration
 	matcher   Matcher
 	ctx       Context
+	files     map[string]bool
 	count     int
 	debounced chan int
 
@@ -227,11 +280,12 @@ type debounce struct {
 }
 
 // Debounce collects all file changes and triggers at maximum once for the given duration.
-// Changes to different files are merged and the file paramter reflects the last change.
+// Changes to different files are merged: Files holds all of them and File the last one.
 func Debounce(delay time.Duration, m Matcher) Matcher {
 	deb := &debounce{
 		delay:     delay,
 		matcher:   m,
+		files:     map[string]bool{},
 		debounced: make(chan int),
 	}
 
@@ -262,6 +316,10 @@ func (d *debounce) Match(c Context) {
 
 	d.ctx = c
 
+	for _, f := range c.Files() {
+		d.files[f] = true
+	}
+
 	if d.count == 0 {
 		go func() {
 			time.Sleep(d.delay)
@@ -276,9 +334,17 @@ func (d *debounce) run() {
 	for range d.debounced {
 		d.lock.Lock()
 
-		d.matcher.Match(d.ctx)
+		files := make([]string, 0, len(d.files))
+		for f := range d.files {
+			files = append(files, f)
+		}
+
+		sort.Strings(files)
+
+		d.matcher.Match(&filesContext{Context: d.ctx, files: files})
 		d.count = 0
 		d.ctx = nil
+		d.files = map[string]bool{}
 
 		d.lock.Unlock()
 	}
